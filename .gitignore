@@ -1,0 +1,12 @@
+node_modules
+.env
+.DS_Store
+*.log
+.trae
+models.md
+
+backend/database_schema.sql
+backend/prisma/dump-data.ts
+
+pricing_data.xlsx
+backend/pricing_data.xlsx
