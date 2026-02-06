@@ -226,7 +226,7 @@ export default function StylistSchedule() {
                             )}>
                               <div className="font-semibold truncate">{booking.customer?.fullName || 'Guest'}</div>
                               {booking.category && <div className="truncate font-medium text-[10px] uppercase opacity-80">{booking.category.name}</div>}
-                              <div className="truncate opacity-90">{booking.service?.name}</div>
+                              <div className="truncate opacity-90">{booking.style?.name}</div>
                               <div className="mt-1 flex items-center gap-1 opacity-75">
                                 <Clock className="w-3 h-3" />
                                 <span>{format(parseISO(booking.bookingTime), 'h:mm a')}</span>
@@ -237,7 +237,7 @@ export default function StylistSchedule() {
                             <div className="grid gap-4">
                               <div className="space-y-2">
                                 {booking.category && <div className="text-xs font-semibold text-primary uppercase">{booking.category.name}</div>}
-                                <h4 className="font-medium leading-none">{booking.service?.name}</h4>
+                                <h4 className="font-medium leading-none">{booking.style?.name}</h4>
                                 <p className="text-sm text-muted-foreground">
                                   {format(parseISO(booking.bookingDate), 'MMMM do, yyyy')} at {format(parseISO(booking.bookingTime), 'h:mm a')}
                                 </p>
@@ -258,7 +258,7 @@ export default function StylistSchedule() {
                                     {booking.status}
                                   </Badge>
                                   <span className="text-sm text-muted-foreground ml-auto">
-                                    ${booking.service?.price}
+                                    ${booking.price}
                                   </span>
                                 </div>
                               </div>

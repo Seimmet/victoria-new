@@ -13,7 +13,7 @@ export interface Stylist {
   skillLevel: string;
   surcharge?: number;
   styleSurcharges?: Record<string, number>;
-  workingHours?: Record<string, { start: string; end: string; isOpen: boolean }>;
+  workingHours?: Record<string, { start?: string; end?: string; isOpen: boolean }>;
   isActive: boolean;
   createdAt: string;
   pricing?: StylistPricing[];

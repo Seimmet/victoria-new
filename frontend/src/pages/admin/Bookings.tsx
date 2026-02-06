@@ -217,7 +217,7 @@ function RecordPaymentDialog({ booking, onRecordPayment }: { booking: Booking; o
         <div className="grid gap-4 py-4">
           <div className="grid grid-cols-4 items-center gap-4">
             <Label className="text-right">Service</Label>
-            <div className="col-span-3 font-medium">{booking.service.name}</div>
+            <div className="col-span-3 font-medium">{booking.style?.name || booking.category?.name || 'Service'}</div>
           </div>
           <div className="grid grid-cols-4 items-center gap-4">
             <Label className="text-right">Service Price</Label>

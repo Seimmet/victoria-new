@@ -134,7 +134,32 @@ export const getAvailability = async (req: Request, res: Response): Promise<void
         const dayName = daysMap[dayOfWeek];
         const dayConfig = businessHours[dayName];
 
-        if (!dayConfig || !dayConfig.isOpen) {
+        // 1. Determine Effective Operating Range (Union of Global + Stylist Hours)
+        let minStartHour = 24;
+        let maxEndHour = 0;
+        let isDayOpenGlobally = dayConfig && dayConfig.isOpen;
+
+        if (isDayOpenGlobally) {
+            minStartHour = parseInt(dayConfig.start.split(':')[0]);
+            maxEndHour = parseInt(dayConfig.end.split(':')[0]);
+        }
+
+        // Check overrides from active stylists
+        for (const stylist of activeStylists) {
+            if (stylist.workingHours) {
+                const sSchedule = (stylist.workingHours as any)[dayName.toLowerCase()];
+                if (sSchedule && sSchedule.isOpen && sSchedule.start && sSchedule.end) {
+                    const sStart = parseInt(sSchedule.start.split(':')[0]);
+                    const sEnd = parseInt(sSchedule.end.split(':')[0]);
+                    
+                    // If we found a working stylist, update range
+                    if (sStart < minStartHour) minStartHour = sStart;
+                    if (sEnd > maxEndHour) maxEndHour = sEnd;
+                }
+            }
+        }
+
+        if (minStartHour >= maxEndHour) {
             result[dateKey] = [];
         } else {
             const daySlots: { time: string; available: boolean; spots: number; stylists: { id: string; name: string; }[]; }[] = [];
@@ -144,30 +169,18 @@ export const getAvailability = async (req: Request, res: Response): Promise<void
                 toDateString(new Date(b.bookingDate)) === dateKey
             );
 
-            const startHour = parseInt(dayConfig.start.split(':')[0]);
-            const endHour = parseInt(dayConfig.end.split(':')[0]);
-            const closingTimeMinutes = endHour * 60 + parseInt(dayConfig.end.split(':')[1] || '0');
-
-            for (let hour = startHour; hour < endHour; hour++) {
+            for (let hour = minStartHour; hour < maxEndHour; hour++) {
                 const timeString = `${hour.toString().padStart(2, '0')}:00:00`;
                 
                 // Construct Requested Slot Range
-                // We use arbitrary date (1970-01-01) for time comparison to match logic or just minutes
-                // Easier to use minutes from midnight
                 const slotStartMinutes = hour * 60;
                 const slotEndMinutes = slotStartMinutes + requestedDuration;
-
-                // Check if slot exceeds closing time
-                if (slotEndMinutes > closingTimeMinutes) {
-                    continue; 
-                }
 
                 // Check Availability
                 let freeStylistsCount = 0;
                 let unassignedConflictCount = 0;
 
                 // 1. Calculate Unassigned Bookings Overlap
-                // These "eat up" available stylists
                 const unassignedBookings = dayBookings.filter(b => !b.stylistId);
                 for (const b of unassignedBookings) {
                     const bTime = new Date(b.bookingTime);
@@ -175,7 +188,6 @@ export const getAvailability = async (req: Request, res: Response): Promise<void
                     const bDuration = getBookingDuration(b);
                     const bEndMinutes = bStartMinutes + bDuration;
 
-                    // Overlap: (StartA < EndB) && (EndA > StartB)
                     if (slotStartMinutes < bEndMinutes && slotEndMinutes > bStartMinutes) {
                         unassignedConflictCount++;
                     }
@@ -199,10 +211,22 @@ export const getAvailability = async (req: Request, res: Response): Promise<void
                              const sStart = parseInt(daySchedule.start.split(':')[0]) * 60 + parseInt(daySchedule.start.split(':')[1] || '0');
                              const sEnd = parseInt(daySchedule.end.split(':')[0]) * 60 + parseInt(daySchedule.end.split(':')[1] || '0');
                              
-                             // If slot starts before shift start OR ends after shift end, stylist is unavailable
                              if (slotStartMinutes < sStart || slotEndMinutes > sEnd) {
                                  continue;
                              }
+                        }
+                    } else {
+                        // Fallback to Global Hours logic
+                        if (!isDayOpenGlobally) {
+                            continue; // Salon closed, stylist follows salon
+                        }
+                        
+                        // Check against Global Hours
+                        const gStart = parseInt(dayConfig.start.split(':')[0]) * 60 + parseInt(dayConfig.start.split(':')[1] || '0');
+                        const gEnd = parseInt(dayConfig.end.split(':')[0]) * 60 + parseInt(dayConfig.end.split(':')[1] || '0');
+
+                        if (slotStartMinutes < gStart || slotEndMinutes > gEnd) {
+                            continue;
                         }
                     }
 
@@ -227,7 +251,6 @@ export const getAvailability = async (req: Request, res: Response): Promise<void
                 }
 
                 // Final Calculation
-                // Available Spots = (Free Stylists) - (Unassigned Overlapping Bookings)
                 const finalSpots = freeStylists.length - unassignedConflictCount;
 
                 if (finalSpots > 0) {

@@ -52,8 +52,8 @@ const stylistSchema = z.object({
   surcharge: z.coerce.number().min(0, "Surcharge must be positive").default(0),
   styleSurcharges: z.record(z.string(), z.coerce.number()).default({}),
   workingHours: z.record(z.string(), z.object({
-    start: z.string(),
-    end: z.string(),
+    start: z.string().optional(),
+    end: z.string().optional(),
     isOpen: z.boolean()
   })).optional(),
   isActive: z.boolean().default(true),
@@ -71,7 +71,7 @@ const Stylists = () => {
   const [editingStylist, setEditingStylist] = useState<Stylist | null>(null);
   
   const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-  const DEFAULT_HOURS = { start: "09:00", end: "17:00", isOpen: true };
+  const DEFAULT_HOURS = { start: "09:00", end: "22:00", isOpen: true };
 
   // Pagination & Search states
   const [page, setPage] = useState(1);
@@ -177,6 +177,15 @@ const Stylists = () => {
 
   const handleEdit = (stylist: Stylist) => {
     setEditingStylist(stylist);
+
+    // Prepare working hours with defaults if missing
+    const workingHours = { ...(stylist.workingHours || {}) };
+    DAYS.forEach(day => {
+        if (!workingHours[day]) {
+            workingHours[day] = { isOpen: true, start: "09:00", end: "22:00" };
+        }
+    });
+
     form.reset({
       fullName: stylist.fullName,
       email: stylist.email,
@@ -186,6 +195,7 @@ const Stylists = () => {
       skillLevel: stylist.skillLevel,
       surcharge: Number(stylist.surcharge) || 0,
       styleSurcharges: stylist.styleSurcharges || {},
+      workingHours: workingHours,
       isActive: stylist.isActive,
       styleIds: stylist.styles?.map(s => s.id) || [],
     });
@@ -563,9 +573,19 @@ const Stylists = () => {
                                 <FormItem className="flex flex-row items-center space-x-2 space-y-0 w-32">
                                     <FormControl>
                                         <Checkbox 
-                                            checked={field.value ?? true} // Default to open if undefined
-                                            onCheckedChange={field.onChange}
-                                        />
+                                        checked={field.value ?? true} // Default to open if undefined
+                                        onCheckedChange={(checked) => {
+                                            field.onChange(checked);
+                                            if (checked) {
+                                                const startName = `workingHours.${day}.start` as const;
+                                                const endName = `workingHours.${day}.end` as const;
+                                                // @ts-ignore
+                                                if (!form.getValues(startName)) form.setValue(startName, "09:00");
+                                                // @ts-ignore
+                                                if (!form.getValues(endName)) form.setValue(endName, "22:00");
+                                            }
+                                        }}
+                                    />
                                     </FormControl>
                                     <FormLabel className="capitalize font-medium">{day}</FormLabel>
                                 </FormItem>
@@ -590,7 +610,7 @@ const Stylists = () => {
                                 <FormField
                                     control={form.control}
                                     name={`workingHours.${day}.end`}
-                                    defaultValue="17:00"
+                                    defaultValue="22:00"
                                     render={({ field }) => (
                                         <FormItem className="space-y-0">
                                             <FormControl>
