@@ -62,8 +62,24 @@ model Stylist {
   bookings   Booking[]
   user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   styles     Style[]
+  leaves     StylistLeave[]
 
   @@map("stylists")
+}
+
+model StylistLeave {
+  id        String   @id @default(uuid()) @db.Uuid
+  stylistId String   @map("stylist_id") @db.Uuid
+  startDate DateTime @map("start_date") @db.Date
+  endDate   DateTime @map("end_date") @db.Date
+  reason    String?  @db.VarChar(255)
+  createdAt DateTime @default(now()) @map("created_at")
+  
+  stylist   Stylist  @relation(fields: [stylistId], references: [id], onDelete: Cascade)
+
+  @@map("stylist_leaves")
+  @@index([stylistId])
+  @@index([startDate, endDate])
 }
 
 model StylePricing {

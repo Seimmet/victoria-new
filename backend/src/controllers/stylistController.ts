@@ -288,3 +288,34 @@ export const deleteStylist = async (req: Request, res: Response): Promise<void> 
     }
   }
 };
+
+// Get current logged-in stylist profile
+export const getMyStylistProfile = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = (req as any).user?.id;
+    
+    const stylist = await prisma.stylist.findUnique({
+      where: { userId },
+      include: {
+        user: {
+            select: {
+              fullName: true,
+              email: true,
+              phone: true
+            }
+        },
+        styles: true
+      }
+    });
+
+    if (!stylist) {
+      res.status(404).json({ message: 'Stylist profile not found' });
+      return;
+    }
+
+    res.json(stylist);
+  } catch (error) {
+    console.error('Get my stylist profile error:', error);
+    res.status(500).json({ message: 'Error fetching stylist profile' });
+  }
+};

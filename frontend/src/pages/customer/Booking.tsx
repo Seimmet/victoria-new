@@ -1182,7 +1182,7 @@ export default function Booking() {
                   To change your booking, text {SALON_INFO.bookingPhone}.
               </p>
               <p>
-                  For other enquiries, text {SALON_INFO.inquiryPhone}.
+                  For other enquiries, call {SALON_INFO.inquiryPhone}.
               </p>
           </div>
           <div className="pt-6">

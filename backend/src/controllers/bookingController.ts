@@ -40,7 +40,18 @@ export const getBookings = async (req: Request, res: Response): Promise<void> =>
     if (userRole === 'customer') {
         whereClause.customerId = userId;
     } else if (userRole === 'stylist') {
-        whereClause.stylistId = userId;
+        // Find stylist record for this user
+        const stylist = await prisma.stylist.findUnique({
+            where: { userId: userId }
+        });
+        
+        if (stylist) {
+            whereClause.stylistId = stylist.id;
+        } else {
+            // If user is a stylist role but has no stylist record, they have no bookings
+            res.json([]);
+            return;
+        }
     }
 
     const bookings = await prisma.booking.findMany({
@@ -122,6 +133,11 @@ import { NotificationType, NotificationChannel } from '@prisma/client';
 export const createBooking = async (req: Request, res: Response): Promise<void> => {
   try {
     const { styleId, categoryId, stylistId, date, time, guestDetails, paymentIntentId, promoId } = req.body;
+
+    // Parse Date and Time
+    // Date string YYYY-MM-DD to Date object (Force UTC)
+    const bookingDate = new Date(date + 'T00:00:00Z');
+
     let userId = (req as any).user?.id;
     let createdUserPassword = '';
 
@@ -155,6 +171,20 @@ export const createBooking = async (req: Request, res: Response): Promise<void> 
 
          // Validate Stylist Capability
          if (stylistId) {
+            // Check if stylist is on leave
+            const onLeave = await prisma.stylistLeave.findFirst({
+                where: {
+                    stylistId,
+                    startDate: { lte: bookingDate },
+                    endDate: { gte: bookingDate }
+                }
+            });
+
+            if (onLeave) {
+                res.status(400).json({ message: 'Selected stylist is on leave for this date.' });
+                return;
+            }
+
             const capableStylist = await prisma.stylist.findFirst({
                 where: {
                     id: stylistId,
@@ -269,9 +299,6 @@ export const createBooking = async (req: Request, res: Response): Promise<void> 
         }
     }
     
-    // Parse Date and Time
-    // Date string YYYY-MM-DD to Date object (Force UTC)
-    const bookingDate = new Date(date + 'T00:00:00Z');
     // Time string HH:mm to Date object (Epoch + Time) - Force UTC for Floating Time
     const timeParts = time.split(':');
     const bookingTime = new Date(0); // Epoch

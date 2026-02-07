@@ -50,6 +50,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 // Initialize Stripe safely
 const getStripe = () => {
@@ -506,17 +507,202 @@ export default function Bookings() {
       updateBookingMutation.mutate({ id: bookingId, data: { date, time } });
   };
 
-  // Filter bookings for selected date or upcoming dates
-  const selectedDateBookings = bookings.filter((booking) => {
-    const bookingDate = parseISO(booking.bookingDate);
-    if (date) {
-      return isSameDay(bookingDate, date);
-    }
-    return bookingDate >= startOfDay(new Date());
-  });
-  
-  // Sort by time
-  selectedDateBookings.sort((a, b) => new Date(a.bookingTime).getTime() - new Date(b.bookingTime).getTime());
+  // Filter bookings logic
+  const getFilteredBookings = (type: 'upcoming' | 'completed') => {
+    return bookings.filter((booking) => {
+      const bookingDate = parseISO(booking.bookingDate);
+      const isTodayOrFuture = bookingDate >= startOfDay(new Date());
+      const isPast = bookingDate < startOfDay(new Date());
+      const isCompletedOrCancelled = ['completed', 'cancelled'].includes(booking.status);
+
+      if (date) {
+        if (!isSameDay(bookingDate, date)) return false;
+        if (type === 'upcoming') return !isCompletedOrCancelled;
+        return isCompletedOrCancelled;
+      }
+
+      if (type === 'upcoming') return isTodayOrFuture && !isCompletedOrCancelled;
+      return isPast || isCompletedOrCancelled;
+    }).sort((a, b) => {
+        const dateA = new Date(a.bookingDate + 'T' + a.bookingTime).getTime();
+        const dateB = new Date(b.bookingDate + 'T' + b.bookingTime).getTime();
+        return type === 'upcoming' ? dateA - dateB : dateB - dateA;
+    });
+  };
+
+  const upcomingBookings = getFilteredBookings('upcoming');
+  const completedBookings = getFilteredBookings('completed');
+
+  const renderBookingCard = (booking: Booking) => (
+    <Card key={booking.id} className="overflow-hidden">
+      <div className="flex flex-col md:flex-row md:items-center">
+        {/* Time & Status Strip */}
+        <div className={`p-4 md:w-48 flex flex-col justify-center items-center md:items-start border-b md:border-b-0 md:border-r bg-muted/30`}>
+          {!date && (
+            <span className="text-sm font-medium text-muted-foreground mb-1">
+                {format(parseISO(booking.bookingDate), "MMM d")}
+            </span>
+          )}
+          <span className="text-2xl font-bold">
+            {formatBookingTimeDisplay(booking.bookingTime)}
+          </span>
+          <Badge 
+            variant="secondary" 
+            className={`mt-2 ${getStatusColor(booking.status)}`}
+          >
+            {booking.status.toUpperCase()}
+          </Badge>
+        </div>
+
+        {/* Booking Details */}
+        <div className="p-4 flex-1 space-y-4 md:space-y-0 md:grid md:grid-cols-2 gap-4">
+          <div>
+            {booking.style && (
+              <div className="text-sm font-semibold text-primary uppercase tracking-wide mb-1">
+                {booking.style.name}
+              </div>
+            )}
+            <h4 className="font-semibold text-lg">{booking.category?.name}</h4>
+            {booking.promo && (
+              <div className="mt-1 inline-flex items-center rounded-full bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700 border border-emerald-200">
+                Promo: {booking.promo.title || 'Special Offer'} (
+                {booking.promo.discountPercentage
+                  ? `${booking.promo.discountPercentage}% off`
+                  : `$${booking.promo.promoPrice} promo`}
+                )
+              </div>
+            )}
+            <div className="text-sm text-muted-foreground space-y-1 mt-1">
+              <div className="flex items-center">
+                <User className="h-4 w-4 mr-2" />
+                {booking.customer?.fullName || 'Guest'}
+              </div>
+              <div className="pl-6">{booking.customer?.phone || 'No phone'}</div>
+              <div className="pl-6">{booking.customer?.email || 'No email'}</div>
+            </div>
+            
+             {/* Payment Summary */}
+             <div className="mt-2 pt-2 border-t text-sm">
+                <div className="flex justify-between items-center">
+                   <span className="text-muted-foreground">Total Paid:</span>
+                   <span className="font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded-full border border-green-100">
+                     ${(booking.payments?.reduce((sum, p) => sum + Number(p.amount), 0) || 0).toFixed(2)}
+                   </span>
+                </div>
+             </div>
+          </div>
+
+          <div className="space-y-4">
+             {/* Stylist Assignment */}
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground uppercase">
+                Assigned Stylist
+              </label>
+              {isAdmin ? (
+                <Select
+                  value={booking.stylistId || "unassigned"}
+                  onValueChange={(value) => handleAssignStylist(booking.id, value)}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select Stylist" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="unassigned">Unassigned</SelectItem>
+                    {stylists.map((stylist: any) => (
+                      <SelectItem key={stylist.id} value={stylist.id}>
+                        {stylist.fullName || stylist.user?.fullName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <div className="p-2 border rounded-md bg-muted/50 text-sm font-medium">
+                  {booking.stylist ? (booking.stylist.user?.fullName || "Assigned") : "Unassigned"}
+                </div>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div className="flex flex-wrap gap-2">
+               {/* Status Actions */}
+               {booking.status === 'booked' && (
+                   <Button size="sm" variant="outline" onClick={() => handleStatusChange(booking.id, 'in_progress')}>
+                       Start Appointment
+                   </Button>
+               )}
+               {booking.status === 'in_progress' && (
+                   <Button size="sm" variant="default" className="bg-green-600 hover:bg-green-700" onClick={() => handleStatusChange(booking.id, 'completed')}>
+                       <CheckCircle className="h-4 w-4 mr-2" />
+                       Mark Complete
+                   </Button>
+               )}
+               
+               {/* Payment Action */}
+               {booking.status === 'completed' && (
+                   <div className="flex items-center gap-2">
+                       {(() => {
+                           const totalPaid = booking.payments?.reduce((sum, p) => sum + Number(p.amount), 0) || 0;
+                           // Assume first payment is deposit
+                           const initialDeposit = booking.payments && booking.payments.length > 0 
+                                ? Number([...booking.payments].sort((a, b) => a.id.localeCompare(b.id))[0].amount) 
+                                : 0;
+                           const targetTotal = Number(booking.price || 0) + initialDeposit;
+                           
+                           return totalPaid >= targetTotal - 0.01 ? ( // tolerance for float
+                               <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Paid in Full</Badge>
+                           ) : (
+                               <RecordPaymentDialog 
+                                    booking={booking} 
+                                    onRecordPayment={(amount, method, stripePaymentId) => handleRecordPayment(booking.id, amount, method, stripePaymentId)} 
+                               />
+                           );
+                       })()}
+                   </div>
+               )}
+               
+               {booking.status !== 'cancelled' && booking.status !== 'completed' && (
+                   <>
+                     <RescheduleDialog 
+                         booking={booking} 
+                         onReschedule={(date, time) => handleReschedule(booking.id, date, time)} 
+                     />
+                     <AlertDialog>
+                       <AlertDialogTrigger asChild>
+                         <Button size="sm" variant="ghost" className="text-red-500 hover:text-red-600 hover:bg-red-50">
+                             Cancel
+                         </Button>
+                       </AlertDialogTrigger>
+                       <AlertDialogContent className="max-h-[90vh] w-[95vw] sm:max-w-lg flex flex-col">
+                         <div className="flex-1 overflow-y-auto px-1">
+                           <AlertDialogHeader>
+                             <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                             <AlertDialogDescription>
+                               This action will cancel the booking. This cannot be easily undone.
+                             </AlertDialogDescription>
+                           </AlertDialogHeader>
+                         </div>
+                         <AlertDialogFooter>
+                           <AlertDialogCancel>Dismiss</AlertDialogCancel>
+                           <AlertDialogAction onClick={() => handleStatusChange(booking.id, 'cancelled')} className="bg-red-600 hover:bg-red-700">
+                             Yes, Cancel Booking
+                           </AlertDialogAction>
+                         </AlertDialogFooter>
+                       </AlertDialogContent>
+                     </AlertDialog>
+                   </>
+               )}
+
+               {booking.status === 'cancelled' && (
+                   <Button size="sm" variant="outline" onClick={() => handleStatusChange(booking.id, 'booked')}>
+                       Restore to Booked
+                   </Button>
+               )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </Card>
+  );
 
   // Get days with bookings for calendar modifiers
   const bookedDays = bookings.map((b) => parseISO(b.bookingDate));
@@ -596,196 +782,58 @@ export default function Bookings() {
 
         {/* Bookings List */}
         <div className="md:col-span-8 lg:col-span-9 space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-xl font-semibold">
-              {date ? format(date, "MMMM d, yyyy") : `Upcoming Bookings`}
-            </h3>
-            <Badge variant="outline" className="text-base">
-              {selectedDateBookings.length} Bookings
-            </Badge>
-          </div>
+          <Tabs defaultValue="upcoming" className="w-full">
+            <TabsList className="grid w-full grid-cols-2 mb-4">
+              <TabsTrigger value="upcoming">
+                Upcoming ({upcomingBookings.length})
+              </TabsTrigger>
+              <TabsTrigger value="completed">
+                Completed ({completedBookings.length})
+              </TabsTrigger>
+            </TabsList>
 
-          {selectedDateBookings.length === 0 ? (
-            <Card className="bg-muted/50 border-dashed">
-              <CardContent className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
-                <CalendarIcon className="h-12 w-12 mb-4 opacity-50" />
-                <p>No bookings found for {date ? "this date" : "upcoming dates"}.</p>
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="grid gap-4">
-              {selectedDateBookings.map((booking) => (
-                <Card key={booking.id} className="overflow-hidden">
-                  <div className="flex flex-col md:flex-row md:items-center">
-                    {/* Time & Status Strip */}
-                    <div className={`p-4 md:w-48 flex flex-col justify-center items-center md:items-start border-b md:border-b-0 md:border-r bg-muted/30`}>
-                      {!date && (
-                        <span className="text-sm font-medium text-muted-foreground mb-1">
-                            {format(parseISO(booking.bookingDate), "MMM d")}
-                        </span>
-                      )}
-                      <span className="text-2xl font-bold">
-                        {formatBookingTimeDisplay(booking.bookingTime)}
-                      </span>
-                      <Badge 
-                        variant="secondary" 
-                        className={`mt-2 ${getStatusColor(booking.status)}`}
-                      >
-                        {booking.status.toUpperCase()}
-                      </Badge>
-                    </div>
-
-                    {/* Booking Details */}
-                    <div className="p-4 flex-1 space-y-4 md:space-y-0 md:grid md:grid-cols-2 gap-4">
-                      <div>
-                        {booking.style && (
-                          <div className="text-sm font-semibold text-primary uppercase tracking-wide mb-1">
-                            {booking.style.name}
-                          </div>
-                        )}
-                        <h4 className="font-semibold text-lg">{booking.category?.name}</h4>
-                        {booking.promo && (
-                          <div className="mt-1 inline-flex items-center rounded-full bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700 border border-emerald-200">
-                            Promo: {booking.promo.title || 'Special Offer'} (
-                            {booking.promo.discountPercentage
-                              ? `${booking.promo.discountPercentage}% off`
-                              : `$${booking.promo.promoPrice} promo`}
-                            )
-                          </div>
-                        )}
-                        <div className="text-sm text-muted-foreground space-y-1 mt-1">
-                          <div className="flex items-center">
-                            <User className="h-4 w-4 mr-2" />
-                            {booking.customer?.fullName || 'Guest'}
-                          </div>
-                          <div className="pl-6">{booking.customer?.phone || 'No phone'}</div>
-                          <div className="pl-6">{booking.customer?.email || 'No email'}</div>
-                        </div>
-                        
-                         {/* Payment Summary */}
-                         <div className="mt-2 pt-2 border-t text-sm">
-                            <div className="flex justify-between items-center">
-                               <span className="text-muted-foreground">Total Paid:</span>
-                               <span className="font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded-full border border-green-100">
-                                 ${(booking.payments?.reduce((sum, p) => sum + Number(p.amount), 0) || 0).toFixed(2)}
-                               </span>
-                            </div>
-                         </div>
-                      </div>
-
-                      <div className="space-y-4">
-                         {/* Stylist Assignment */}
-                        <div className="space-y-1">
-                          <label className="text-xs font-medium text-muted-foreground uppercase">
-                            Assigned Stylist
-                          </label>
-                          {isAdmin ? (
-                            <Select
-                              value={booking.stylistId || "unassigned"}
-                              onValueChange={(value) => handleAssignStylist(booking.id, value)}
-                            >
-                              <SelectTrigger className="w-full">
-                                <SelectValue placeholder="Select Stylist" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="unassigned">Unassigned</SelectItem>
-                                {stylists.map((stylist: any) => (
-                                  <SelectItem key={stylist.id} value={stylist.id}>
-                                    {stylist.fullName || stylist.user?.fullName}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          ) : (
-                            <div className="p-2 border rounded-md bg-muted/50 text-sm font-medium">
-                              {booking.stylist ? (booking.stylist.user?.fullName || "Assigned") : "Unassigned"}
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Actions */}
-                        <div className="flex flex-wrap gap-2">
-                           {/* Status Actions */}
-                           {booking.status === 'booked' && (
-                               <Button size="sm" variant="outline" onClick={() => handleStatusChange(booking.id, 'in_progress')}>
-                                   Start Appointment
-                               </Button>
-                           )}
-                           {booking.status === 'in_progress' && (
-                               <Button size="sm" variant="default" className="bg-green-600 hover:bg-green-700" onClick={() => handleStatusChange(booking.id, 'completed')}>
-                                   <CheckCircle className="h-4 w-4 mr-2" />
-                                   Mark Complete
-                               </Button>
-                           )}
-                           
-                           {/* Payment Action */}
-                           {booking.status === 'completed' && (
-                               <div className="flex items-center gap-2">
-                                   {(() => {
-                                       const totalPaid = booking.payments?.reduce((sum, p) => sum + Number(p.amount), 0) || 0;
-                                       // Assume first payment is deposit
-                                       const initialDeposit = booking.payments && booking.payments.length > 0 
-                                            ? Number([...booking.payments].sort((a, b) => a.id.localeCompare(b.id))[0].amount) 
-                                            : 0;
-                                       const targetTotal = Number(booking.price || 0) + initialDeposit;
-                                       
-                                       return totalPaid >= targetTotal - 0.01 ? ( // tolerance for float
-                                           <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Paid in Full</Badge>
-                                       ) : (
-                                           <RecordPaymentDialog 
-                                                booking={booking} 
-                                                onRecordPayment={(amount, method, stripePaymentId) => handleRecordPayment(booking.id, amount, method, stripePaymentId)} 
-                                           />
-                                       );
-                                   })()}
-                               </div>
-                           )}
-                           
-                           {booking.status !== 'cancelled' && booking.status !== 'completed' && (
-                               <>
-                                 <RescheduleDialog 
-                                     booking={booking} 
-                                     onReschedule={(date, time) => handleReschedule(booking.id, date, time)} 
-                                 />
-                                 <AlertDialog>
-                                   <AlertDialogTrigger asChild>
-                                     <Button size="sm" variant="ghost" className="text-red-500 hover:text-red-600 hover:bg-red-50">
-                                         Cancel
-                                     </Button>
-                                   </AlertDialogTrigger>
-                                   <AlertDialogContent className="max-h-[90vh] w-[95vw] sm:max-w-lg flex flex-col">
-                                     <div className="flex-1 overflow-y-auto px-1">
-                                       <AlertDialogHeader>
-                                         <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-                                         <AlertDialogDescription>
-                                           This action will cancel the booking. This cannot be easily undone.
-                                         </AlertDialogDescription>
-                                       </AlertDialogHeader>
-                                     </div>
-                                     <AlertDialogFooter>
-                                       <AlertDialogCancel>Dismiss</AlertDialogCancel>
-                                       <AlertDialogAction onClick={() => handleStatusChange(booking.id, 'cancelled')} className="bg-red-600 hover:bg-red-700">
-                                         Yes, Cancel Booking
-                                       </AlertDialogAction>
-                                     </AlertDialogFooter>
-                                   </AlertDialogContent>
-                                 </AlertDialog>
-                               </>
-                           )}
-
-                           {booking.status === 'cancelled' && (
-                               <Button size="sm" variant="outline" onClick={() => handleStatusChange(booking.id, 'booked')}>
-                                   Restore to Booked
-                               </Button>
-                           )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+            <TabsContent value="upcoming" className="space-y-4">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xl font-semibold">
+                  {date ? format(date, "MMMM d, yyyy") : `Upcoming Bookings`}
+                </h3>
+              </div>
+              
+              {upcomingBookings.length === 0 ? (
+                <Card className="bg-muted/50 border-dashed">
+                  <CardContent className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
+                    <CalendarIcon className="h-12 w-12 mb-4 opacity-50" />
+                    <p>No upcoming bookings found{date ? " for this date" : ""}.</p>
+                  </CardContent>
                 </Card>
-              ))}
-            </div>
-          )}
+              ) : (
+                <div className="grid gap-4">
+                  {upcomingBookings.map(renderBookingCard)}
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="completed" className="space-y-4">
+               <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xl font-semibold">
+                  {date ? format(date, "MMMM d, yyyy") : `Completed Bookings`}
+                </h3>
+              </div>
+              
+              {completedBookings.length === 0 ? (
+                <Card className="bg-muted/50 border-dashed">
+                  <CardContent className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
+                    <CheckCircle className="h-12 w-12 mb-4 opacity-50" />
+                    <p>No completed bookings found{date ? " for this date" : ""}.</p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="grid gap-4">
+                  {completedBookings.map(renderBookingCard)}
+                </div>
+              )}
+            </TabsContent>
+          </Tabs>
         </div>
       </div>
     </div>

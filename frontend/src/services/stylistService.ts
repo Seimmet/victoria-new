@@ -20,6 +20,15 @@ export interface Stylist {
   styles?: { id: string; name: string }[];
 }
 
+export interface StylistLeave {
+  id: string;
+  stylistId: string;
+  startDate: string;
+  endDate: string;
+  reason?: string;
+  createdAt: string;
+}
+
 export interface StylistPricing {
   id: string;
   stylistId: string;
@@ -108,11 +117,66 @@ export const stylistService = {
   async getStylistById(id: string): Promise<Stylist> {
     const token = authService.getToken();
     const response = await fetch(`${API_URL}/${id}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) throw new Error("Failed to fetch stylist");
+    return response.json();
+  },
+
+  async getMyProfile(): Promise<Stylist> {
+    const token = authService.getToken();
+    const response = await fetch(`${API_URL}/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) throw new Error("Failed to fetch stylist profile");
+    return response.json();
+  },
+
+  async addLeave(stylistId: string, leave: { startDate: string | Date; endDate: string | Date; reason?: string }): Promise<StylistLeave> {
+    const token = authService.getToken();
+    const response = await fetch(`${API_URL}/${stylistId}/leaves`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(leave),
+    });
+    if (!response.ok) throw new Error("Failed to add leave");
+    return response.json();
+  },
+
+  async deleteLeave(leaveId: string): Promise<void> {
+    const token = authService.getToken();
+    const response = await fetch(`${API_URL}/leaves/${leaveId}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) throw new Error("Failed to delete leave");
+  },
+
+  async getLeaves(stylistId: string): Promise<StylistLeave[]> {
+    const token = authService.getToken();
+    const response = await fetch(`${API_URL}/${stylistId}/leaves`, {
       headers: {
         Authorization: `Bearer ${token}`,
       },
     });
-    if (!response.ok) throw new Error("Failed to fetch stylist details");
+    if (!response.ok) throw new Error("Failed to fetch leaves");
+    return response.json();
+  },
+
+  async updateLeave(leaveId: string, leave: { startDate: string | Date; endDate: string | Date; reason?: string }): Promise<StylistLeave> {
+    const token = authService.getToken();
+    const response = await fetch(`${API_URL}/leaves/${leaveId}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(leave),
+    });
+    if (!response.ok) throw new Error("Failed to update leave");
     return response.json();
   }
 };

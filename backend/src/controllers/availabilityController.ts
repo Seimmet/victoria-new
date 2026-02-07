@@ -40,7 +40,7 @@ export const getAvailability = async (req: Request, res: Response): Promise<void
     const requestedDuration = duration ? parseInt(duration as string) : 60;
 
     // 1. Get Active Stylists
-    let activeStylists: { id: string, workingHours: any, user: { fullName: string } }[] = [];
+    let activeStylists: { id: string, workingHours: any, user: { fullName: string }, leaves: { startDate: Date, endDate: Date }[] }[] = [];
     if (stylistId) {
         const where: any = { id: stylistId as string, isActive: true };
         if (styleId) {
@@ -49,7 +49,18 @@ export const getAvailability = async (req: Request, res: Response): Promise<void
 
         const stylist = await prisma.stylist.findFirst({
             where,
-            select: { id: true, workingHours: true, user: { select: { fullName: true } } }
+            select: { 
+                id: true, 
+                workingHours: true, 
+                user: { select: { fullName: true } },
+                leaves: {
+                    where: {
+                         // Overlap check: Leave Start <= Range End AND Leave End >= Range Start
+                         startDate: { lte: end },
+                         endDate: { gte: start }
+                    }
+                }
+            }
         });
         if (stylist) activeStylists = [stylist];
     } else {
@@ -60,7 +71,17 @@ export const getAvailability = async (req: Request, res: Response): Promise<void
 
         activeStylists = await prisma.stylist.findMany({
             where,
-            select: { id: true, workingHours: true, user: { select: { fullName: true } } }
+            select: { 
+                id: true, 
+                workingHours: true, 
+                user: { select: { fullName: true } },
+                leaves: {
+                    where: {
+                         startDate: { lte: end },
+                         endDate: { gte: start }
+                    }
+                }
+            }
         });
     }
 
@@ -146,6 +167,13 @@ export const getAvailability = async (req: Request, res: Response): Promise<void
 
         // Check overrides from active stylists
         for (const stylist of activeStylists) {
+            // Check if stylist is on leave
+            const isStrictlyOnLeave = stylist.leaves.some(l => {
+                return loopDate.getTime() >= l.startDate.getTime() && loopDate.getTime() <= l.endDate.getTime();
+            });
+
+            if (isStrictlyOnLeave) continue;
+
             if (stylist.workingHours) {
                 const sSchedule = (stylist.workingHours as any)[dayName.toLowerCase()];
                 if (sSchedule && sSchedule.isOpen && sSchedule.start && sSchedule.end) {
@@ -197,6 +225,13 @@ export const getAvailability = async (req: Request, res: Response): Promise<void
                 const freeStylists: { id: string, name: string }[] = [];
                 for (const stylist of activeStylists) {
                     
+                    // Check if stylist is on leave
+                    const isStrictlyOnLeave = stylist.leaves.some(l => {
+                        return loopDate.getTime() >= l.startDate.getTime() && loopDate.getTime() <= l.endDate.getTime();
+                    });
+
+                    if (isStrictlyOnLeave) continue;
+
                     // Check specific working hours if defined
                     if (stylist.workingHours) {
                         const daySchedule = (stylist.workingHours as any)[dayName.toLowerCase()];

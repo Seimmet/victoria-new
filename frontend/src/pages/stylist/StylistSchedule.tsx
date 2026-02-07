@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { bookingService, Booking } from '@/services/bookingService';
 import { settingsService, SalonSettings } from '@/services/settingsService';
+import { stylistService, StylistLeave } from '@/services/stylistService';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, User } from 'lucide-react';
@@ -13,6 +14,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 
 export default function StylistSchedule() {
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [leaves, setLeaves] = useState<StylistLeave[]>([]);
   const [settings, setSettings] = useState<SalonSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -33,6 +35,17 @@ export default function StylistSchedule() {
           console.error('Expected bookings to be an array, got:', bookingsData);
         }
         setSettings(settingsData);
+
+        // Fetch Stylist Profile & Leaves
+        try {
+            const profile = await stylistService.getMyProfile();
+            if (profile && profile.id) {
+                const leavesData = await stylistService.getLeaves(profile.id);
+                setLeaves(leavesData);
+            }
+        } catch (e) {
+            console.log("Not a stylist or failed to fetch profile", e);
+        }
       } catch (err: any) {
         setError(err.message || 'Failed to load schedule');
       } finally {
@@ -207,6 +220,14 @@ export default function StylistSchedule() {
                 {weekDays.map((day) => {
                   const booking = getBookingForSlot(day, hour);
                   const isPast = day < startOfDay(new Date()) || (isSameDay(day, new Date()) && hour < new Date().getHours());
+                  
+                  // Check Leave
+                  const isOnLeave = leaves.some(leave => {
+                      const leaveStart = leave.startDate.toString().split('T')[0];
+                      const leaveEnd = leave.endDate.toString().split('T')[0];
+                      const dayStr = format(day, 'yyyy-MM-dd');
+                      return dayStr >= leaveStart && dayStr <= leaveEnd;
+                  });
 
                   return (
                     <div 
@@ -214,9 +235,15 @@ export default function StylistSchedule() {
                       className={cn(
                         "border-r last:border-r-0 min-h-[80px] p-1 relative group transition-colors",
                         isSameDay(day, new Date()) ? "bg-primary/[0.02]" : "",
-                        !booking && isPast ? "bg-muted/10" : ""
+                        !booking && isPast ? "bg-muted/10" : "",
+                        isOnLeave ? "bg-red-50/50" : ""
                       )}
                     >
+                      {isOnLeave && (
+                          <div className="absolute inset-0 flex items-center justify-center bg-red-50/80 text-xs font-medium text-red-500 z-10 pointer-events-none border border-red-100 m-1 rounded-md">
+                              Time Off
+                          </div>
+                      )}
                       {booking ? (
                         <Popover>
                           <PopoverTrigger asChild>
