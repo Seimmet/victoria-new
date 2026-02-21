@@ -1,14 +1,14 @@
 import { Request, Response } from 'express';
 import prisma from '../utils/prisma';
 
-// Public: Get active promos
 export const getActivePromos = async (req: Request, res: Response): Promise<void> => {
   try {
-    const promos = await prisma.monthlyPromo.findMany({
+    const timeoutMs = 15000;
+    const queryPromise = prisma.monthlyPromo.findMany({
       where: {
         isActive: true,
         offerEnds: {
-          gte: new Date(), // Only future/current promos
+          gte: new Date(),
         },
       },
       include: {
@@ -22,7 +22,12 @@ export const getActivePromos = async (req: Request, res: Response): Promise<void
       orderBy: {
         createdAt: 'desc',
       },
+      take: 50,
     });
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Request timeout')), timeoutMs)
+    );
+    const promos = await Promise.race([queryPromise, timeoutPromise]);
     res.json(promos);
   } catch (error) {
     console.error('Error fetching promos:', error);
@@ -30,7 +35,6 @@ export const getActivePromos = async (req: Request, res: Response): Promise<void
   }
 };
 
-// Admin: Get all promos
 export const getAllPromos = async (req: Request, res: Response): Promise<void> => {
   try {
     const promos = await prisma.monthlyPromo.findMany({
@@ -45,6 +49,7 @@ export const getAllPromos = async (req: Request, res: Response): Promise<void> =
       orderBy: {
         createdAt: 'desc',
       },
+      take: 200,
     });
     res.json(promos);
   } catch (error) {

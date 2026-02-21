@@ -61,9 +61,13 @@ export const uploadLogo = async (req: Request, res: Response) => {
 
 export const getSettings = async (req: Request, res: Response) => {
   try {
-    const settings = await prisma.salonSettings.findFirst();
+    const timeoutMs = 15000;
+    const queryPromise = prisma.salonSettings.findFirst();
+    const timeoutPromise = new Promise<null>((_, reject) =>
+      setTimeout(() => reject(new Error('Request timeout')), timeoutMs)
+    );
+    const settings = (await Promise.race([queryPromise, timeoutPromise])) as any;
     if (!settings) {
-      // Should ideally be seeded, but create default if missing
       const newSettings = await prisma.salonSettings.create({
         data: {
           salonName: 'Victoria Braids & Weaves',
@@ -78,7 +82,6 @@ export const getSettings = async (req: Request, res: Response) => {
       return res.json(newSettings);
     }
     
-    // Ensure businessHours is present
     if (!settings.businessHours) {
         settings.businessHours = DEFAULT_BUSINESS_HOURS;
     }

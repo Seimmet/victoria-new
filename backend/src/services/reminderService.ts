@@ -5,42 +5,29 @@ import { notificationQueue } from './notificationQueueService';
 import { NotificationType, NotificationChannel } from '@prisma/client';
 
 export const reminderService = {
-  /**
-   * Check for bookings tomorrow and send reminders
-   * Run this job every hour
-   */
   checkAndSendReminders: async () => {
     try {
       console.log('Running reminder check...');
-      
       const settings = await prisma.salonSettings.findFirst();
       const timeZone = settings?.timezone || 'UTC';
-
+      const notificationsEnabled = settings?.notificationsEnabled ?? true;
+      if (!notificationsEnabled) {
+        console.log('Notifications disabled in settings, skipping reminder check');
+        return;
+      }
       const now = new Date();
-      // Get current hour in Salon's Timezone using Intl
       const formatter = new Intl.DateTimeFormat('en-US', {
         timeZone,
         hour12: false,
         hour: 'numeric'
       });
-      // formatter.format(now) returns string "10" for 10 AM.
-      // However, if it's "24" it might be 0. Let's check.
-      // 'numeric' usually returns 0-23 or 1-24 depending on locale.
-      // en-US with hour12: false returns 0-23.
       const currentHour = parseInt(formatter.format(now));
-      
-      // Calculate "Tomorrow"
       const tomorrow = new Date(now);
       tomorrow.setDate(tomorrow.getDate() + 1);
-      
-      // Construct start and end of "tomorrow" to query bookingDate
-      // We assume bookingDate is stored as midnight UTC or local date
-      // Prisma @db.Date usually stores YYYY-MM-DD. When queried, it returns Date at 00:00 UTC.
       const tomorrowStr = tomorrow.toISOString().split('T')[0];
       const startOfTomorrow = new Date(`${tomorrowStr}T00:00:00.000Z`);
       const endOfTomorrow = new Date(`${tomorrowStr}T23:59:59.999Z`);
-
-      // Find bookings for tomorrow
+      const maxBookingsPerRun = 100;
       const bookings = await prisma.booking.findMany({
         where: {
           bookingDate: {
@@ -53,22 +40,16 @@ export const reminderService = {
           customer: true,
           style: true,
           category: true
-        }
+        },
+        take: maxBookingsPerRun
       });
-
-      console.log(`Found ${bookings.length} bookings for tomorrow (${tomorrowStr}). Checking times...`);
-
+      console.log(`Found ${bookings.length} bookings for tomorrow (${tomorrowStr}). Checking times for hour ${currentHour}...`);
       for (const booking of bookings) {
-        // Check if booking time matches current hour
-        // We compare the Stored Hour (which is Wall Clock Time stored as UTC)
-        // with the Current Hour (which is Wall Clock Time in Salon Timezone).
         const bookingHour = booking.bookingTime.getUTCHours();
-
         if (bookingHour === currentHour) {
-            await reminderService.sendReminderForBooking(booking);
+          await reminderService.sendReminderForBooking(booking);
         }
       }
-
     } catch (error) {
       console.error('Error in checkAndSendReminders:', error);
     }
